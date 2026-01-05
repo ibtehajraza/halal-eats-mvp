@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Restaurant {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  address     String
+  city        String   @default("ottawa")
+  phone       String
+  website     String?
+  lat         Float
+  lng         Float
+  halalStatus String   @default("self-reported")
+  halalNote   String?
+  priceRange  Int      @default(2)
+  rating      Float?
+  photos      String[] @default([])
+  menu        Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cuisines    RestaurantCuisine[]
+  features    RestaurantFeature[]
+  hours       RestaurantHours[]
+  events      AnalyticsEvent[]
+  favorites   Favorite[]
+  
+  // Analytics aggregates
+  totalViews         Int @default(0)
+  totalDirections    Int @default(0)
+  totalCalls         Int @default(0)
+  totalWebsiteClicks Int @default(0)
+}
+
+model Cuisine {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  restaurants RestaurantCuisine[]
+}
+
+model Feature {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  restaurants RestaurantFeature[]
+}
+
+model RestaurantCuisine {
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  cuisine      Cuisine    @relation(fields: [cuisineId], references: [id], onDelete: Cascade)
+  cuisineId    String
+  @@id([restaurantId, cuisineId])
+}
+
+model RestaurantFeature {
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  feature      Feature    @relation(fields: [featureId], references: [id], onDelete: Cascade)
+  featureId    String
+  @@id([restaurantId, featureId])
+}
+
+model RestaurantHours {
+  id           String     @id @default(cuid())
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  restaurantId String
+  days         String
+  hours        String
+  @@unique([restaurantId, days])
+}
+
+// ============ ANALYTICS ============
+
+model Visitor {
+  id             String    @id @default(cuid())
+  fingerprint    String    @unique
+  firstSeen      DateTime  @default(now())
+  lastSeen       DateTime  @updatedAt
+  totalSessions  Int       @default(0)
+  totalPageViews Int       @default(0)
+  city           String?
+  sessions       Session[]
+  events         AnalyticsEvent[]
+}
+
+model Session {
+  id          String    @id @default(cuid())
+  visitor     Visitor   @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorId   String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  duration    Int?
+  pageViews   Int       @default(0)
+  userAgent   String?
+  referrer    String?
+  landingPage String?
+  exitPage    String?
+  device      String?
+  events      AnalyticsEvent[]
+}
+
+model AnalyticsEvent {
+  id           String      @id @default(cuid())
+  visitor      Visitor     @relation(fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorId    String
+  session      Session     @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sessionId    String
+  timestamp    DateTime    @default(now())
+  eventType    String      // page_view, filter_use, restaurant_view, action_click, conversion
+  eventName    String
+  page         String?
+  restaurantId String?
+  restaurant   Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  metadata     Json?
+}
+
+model Favorite {
+visitorId    String
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  createdAt    DateTime   @default(now())
+  @@id([visitorId, restaurantId])
+}
