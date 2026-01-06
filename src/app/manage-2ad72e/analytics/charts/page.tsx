@@ -7,9 +7,19 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
 
+interface DailyData {
+  date: string;
+  visitors: number;
+  sessions: number;
+  pageViews: number;
+  conversions: number;
+  filterUses: number;
+  avgDuration: number;
+}
+
 interface ChartData {
-  daily: { date: string; visitors: number; sessions: number; pageViews: number; conversions: number; filterUses: number; avgDuration: number }[];
-  weekly: typeof ChartData.prototype.daily;
+  daily: DailyData[];
+  weekly: DailyData[];
   hourly: { hour: number; sessions: number; pageViews: number }[];
   devices: { name: string; value: number }[];
   eventTypes: { name: string; value: number }[];
