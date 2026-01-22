@@ -160,7 +160,12 @@ export default function FilterBar({ filters, updateFilter, cuisineTypes, feature
         {/* Clear Filters */}
         {activeCount > 0 && (
           <button
-            onClick={() => updateFilter('cuisines', []) || updateFilter('features', []) || updateFilter('priceRange', []) || updateFilter('openNow', false)}
+            onClick={() => {
+              updateFilter('cuisines', []);
+              updateFilter('features', []);
+              updateFilter('priceRange', []);
+              updateFilter('openNow', false);
+            }}
             className="text-sm text-primary hover:underline flex items-center gap-1"
           >
             <X size={14} /> Clear all

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import './globals.css';
-import { AnalyticsProvider } from '@/lib/analytics';
 
 export const metadata: Metadata = {
   title: 'Halal Eats Ottawa | Find Halal Restaurants Near You',
@@ -15,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossOrigin="" />
       </head>
       <body className="bg-neutral-bg min-h-screen">
-        <AnalyticsProvider>{children}</AnalyticsProvider>
+        {children}
       </body>
     </html>
   );

@@ -1,12 +1,14 @@
 'use client';
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { getDistance, isOpenNow } from '@/lib/data';
 import Header from '@/components/Header';
 import FilterBar from '@/components/FilterBar';
 import RestaurantCard from '@/components/RestaurantCard';
-import MapView from '@/components/MapView';
 import LocationSelector from '@/components/LocationSelector';
-import { List, Map as MapIcon, Search, X, TrendingUp, Sparkles, Heart } from 'lucide-react';
+import { List, Map as MapIcon, Search, X, Heart } from 'lucide-react';
+
+const MapView = dynamic(() => import('@/components/MapView'), { ssr: false });
 
 const OTTAWA_CENTER = { lat: 45.4215, lng: -75.6972 };
 
@@ -25,14 +27,7 @@ interface Restaurant {
   priceRange: number;
   rating?: number;
   photos: string[];
-  hours: Record<string, string>;
-  totalViews?: number;
-  createdAt?: string;
-}
-
-function getVisitorId(): string {
-  if (typeof window === 'undefined') return '';
-  return localStorage.getItem('visitor_id') || '';
+  hours: { days: string; hours: string }[];
 }
 
 export default function Home() {
@@ -40,12 +35,10 @@ export default function Home() {
   const [userLocation, setUserLocation] = useState(OTTAWA_CENTER);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [trending, setTrending] = useState<Restaurant[]>([]);
-  const [newThisWeek, setNewThisWeek] = useState<Restaurant[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [options, setOptions] = useState({ cuisines: [] as string[], features: [] as string[] });
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeSection, setActiveSection] = useState<'all' | 'trending' | 'new' | 'favorites'>('all');
+  const [showFavorites, setShowFavorites] = useState(false);
   const [filters, setFilters] = useState({
     cuisines: [] as string[],
     radius: 25,
@@ -56,14 +49,11 @@ export default function Home() {
 
   useEffect(() => {
     fetch('/api/restaurants').then((r) => r.json()).then(setRestaurants);
-    fetch('/api/restaurants?filter=trending').then((r) => r.json()).then((data) => setTrending(data.slice(0, 6)));
-    fetch('/api/restaurants?filter=new').then((r) => r.json()).then(setNewThisWeek);
     fetch('/api/options').then((r) => r.json()).then(setOptions);
     
-    const visitorId = getVisitorId();
-    if (visitorId) {
-      fetch(`/api/favorites?visitorId=${visitorId}`).then((r) => r.json()).then(setFavorites);
-    }
+    // Load favorites from localStorage
+    const saved = localStorage.getItem('favorites');
+    if (saved) setFavorites(JSON.parse(saved));
 
     navigator.geolocation?.getCurrentPosition(
       (pos) => setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
@@ -71,28 +61,19 @@ export default function Home() {
     );
   }, []);
 
-  const toggleFavorite = async (restaurantId: string) => {
-    const visitorId = getVisitorId();
-    if (!visitorId) return;
-
-    const res = await fetch('/api/favorites', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visitorId, restaurantId }),
+  const toggleFavorite = (restaurantId: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(restaurantId) 
+        ? prev.filter((id) => id !== restaurantId) 
+        : [...prev, restaurantId];
+      localStorage.setItem('favorites', JSON.stringify(next));
+      return next;
     });
-    const { favorited } = await res.json();
-    setFavorites((prev) => favorited ? [...prev, restaurantId] : prev.filter((id) => id !== restaurantId));
   };
 
   const filtered = useMemo(() => {
-    let list = restaurants;
+    let list = showFavorites ? restaurants.filter((r) => favorites.includes(r.id)) : restaurants;
 
-    // Section filter
-    if (activeSection === 'trending') list = trending;
-    else if (activeSection === 'new') list = newThisWeek;
-    else if (activeSection === 'favorites') list = restaurants.filter((r) => favorites.includes(r.id));
-
-    // Search filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       list = list.filter((r) =>
@@ -102,19 +83,22 @@ export default function Home() {
       );
     }
 
+    // Convert hours array to object for isOpenNow
+    const toHoursObj = (hours: { days: string; hours: string }[]) => 
+      Object.fromEntries(hours.map((h) => [h.days, h.hours]));
+
     return list
       .map((r) => ({ ...r, distance: getDistance(userLocation.lat, userLocation.lng, r.lat, r.lng) }))
       .filter((r) => {
-        if (activeSection !== 'all' && activeSection !== 'favorites') return true; // Skip filters for sections
         if (r.distance > filters.radius) return false;
         if (filters.cuisines.length && !filters.cuisines.some((c) => r.cuisines.includes(c))) return false;
         if (filters.features.length && !filters.features.every((f) => r.features.includes(f))) return false;
-        if (filters.openNow && !isOpenNow(r.hours)) return false;
+        if (filters.openNow && !isOpenNow(toHoursObj(r.hours))) return false;
         if (filters.priceRange.length && !filters.priceRange.includes(r.priceRange)) return false;
         return true;
       })
       .sort((a, b) => a.distance - b.distance);
-  }, [filters, userLocation, restaurants, trending, newThisWeek, favorites, searchQuery, activeSection]);
+  }, [filters, userLocation, restaurants, favorites, searchQuery, showFavorites]);
 
   const updateFilter = useCallback((key: string, value: any) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
@@ -146,45 +130,31 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Section Tabs */}
-        <div className="bg-neutral-card border-b border-neutral-border px-4 py-2 overflow-x-auto">
+        {/* Favorites Toggle */}
+        <div className="bg-neutral-card border-b border-neutral-border px-4 py-2">
           <div className="flex gap-2 max-w-7xl mx-auto">
-            {[
-              { id: 'all', label: 'All', icon: null },
-              { id: 'trending', label: 'Trending', icon: <TrendingUp size={14} /> },
-              { id: 'new', label: 'New This Week', icon: <Sparkles size={14} /> },
-              { id: 'favorites', label: 'Favorites', icon: <Heart size={14} /> },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveSection(tab.id as any)}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                  activeSection === tab.id
-                    ? 'bg-primary text-white'
-                    : 'bg-neutral-bg text-neutral-secondary hover:text-neutral-text'
-                }`}
-              >
-                {tab.icon} {tab.label}
-                {tab.id === 'favorites' && favorites.length > 0 && (
-                  <span className="ml-1 bg-white/20 px-1.5 rounded-full text-xs">{favorites.length}</span>
-                )}
-                {tab.id === 'new' && newThisWeek.length > 0 && (
-                  <span className="ml-1 bg-white/20 px-1.5 rounded-full text-xs">{newThisWeek.length}</span>
-                )}
-              </button>
-            ))}
+            <button
+              onClick={() => setShowFavorites(false)}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition ${!showFavorites ? 'bg-primary text-white' : 'bg-neutral-bg text-neutral-secondary'}`}
+            >
+              All
+            </button>
+            <button
+              onClick={() => setShowFavorites(true)}
+              className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition ${showFavorites ? 'bg-primary text-white' : 'bg-neutral-bg text-neutral-secondary'}`}
+            >
+              <Heart size={14} /> Favorites {favorites.length > 0 && `(${favorites.length})`}
+            </button>
           </div>
         </div>
 
-        {activeSection === 'all' && (
-          <FilterBar 
-            filters={filters} 
-            updateFilter={updateFilter}
-            cuisineTypes={options.cuisines}
-            featureOptions={options.features}
-            radiusOptions={radiusOptions}
-          />
-        )}
+        <FilterBar 
+          filters={filters} 
+          updateFilter={updateFilter}
+          cuisineTypes={options.cuisines}
+          featureOptions={options.features}
+          radiusOptions={radiusOptions}
+        />
 
         <div className="sticky top-0 z-20 bg-neutral-bg border-b border-neutral-border px-4 py-2 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -216,9 +186,7 @@ export default function Home() {
               ))}
               {filtered.length === 0 && (
                 <div className="col-span-full text-center py-12 text-neutral-secondary">
-                  {activeSection === 'favorites' ? 'No favorites yet. Click the heart icon to save restaurants.' :
-                   activeSection === 'new' ? 'No new restaurants this week.' :
-                   'No restaurants match your search.'}
+                  {showFavorites ? 'No favorites yet. Click the heart icon to save restaurants.' : 'No restaurants match your search.'}
                 </div>
               )}
             </div>

@@ -1,46 +1,27 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
+import { restaurants, getRestaurantBySlug } from '@/lib/static-data';
 import { MapPin, Phone, Globe, Clock, Navigation, BadgeCheck, ArrowLeft, Star } from 'lucide-react';
-import { TrackRestaurantView, ConversionButton } from '@/components/TrackingComponents';
 
 export async function generateStaticParams() {
-  const restaurants = await prisma.restaurant.findMany({ select: { slug: true } });
   return restaurants.map((r) => ({ slug: r.slug }));
 }
 
 export async function generateMetadata({ params }: { params: { slug: string } }) {
-  const restaurant = await prisma.restaurant.findUnique({
-    where: { slug: params.slug },
-    include: { cuisines: { include: { cuisine: true } } },
-  });
+  const restaurant = getRestaurantBySlug(params.slug);
   if (!restaurant) return { title: 'Not Found' };
   return {
     title: `${restaurant.name} | Halal Eats Ottawa`,
-    description: `${restaurant.name} - ${restaurant.cuisines.map((c) => c.cuisine.name).join(', ')} halal restaurant in Ottawa. ${restaurant.address}`,
+    description: `${restaurant.name} - ${restaurant.cuisines.join(', ')} halal restaurant in Ottawa. ${restaurant.address}`,
   };
 }
 
 export default async function RestaurantPage({ params }: { params: { slug: string } }) {
-  const restaurant = await prisma.restaurant.findUnique({
-    where: { slug: params.slug },
-    include: {
-      cuisines: { include: { cuisine: true } },
-      features: { include: { feature: true } },
-      hours: true,
-    },
-  }) as any;
-  
+  const restaurant = getRestaurantBySlug(params.slug);
   if (!restaurant) notFound();
-
-  const cuisines = restaurant.cuisines.map((c) => c.cuisine.name);
-  const features = restaurant.features.map((f) => f.feature.name);
-  const hours = restaurant.hours;
 
   return (
     <div className="min-h-screen bg-neutral-bg">
-      <TrackRestaurantView restaurantId={restaurant.id} restaurantName={restaurant.name} />
-      
       {/* Header */}
       <header className="bg-neutral-card border-b border-neutral-border sticky top-0 z-30">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-4">
@@ -67,7 +48,7 @@ export default async function RestaurantPage({ params }: { params: { slug: strin
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-neutral-text">{restaurant.name}</h1>
-                <p className="text-neutral-secondary mt-1">{cuisines.join(' • ')}</p>
+                <p className="text-neutral-secondary mt-1">{restaurant.cuisines.join(' • ')}</p>
               </div>
               <div className="flex flex-col items-end gap-2">
                 {restaurant.rating && (
@@ -96,7 +77,7 @@ export default async function RestaurantPage({ params }: { params: { slug: strin
 
             {/* Features */}
             <div className="flex flex-wrap gap-2 mt-4">
-              {features.map((f) => (
+              {restaurant.features.map((f) => (
                 <span key={f} className="text-sm px-3 py-1 bg-neutral-bg rounded-full text-neutral-secondary">
                   {f}
                 </span>
@@ -133,8 +114,8 @@ export default async function RestaurantPage({ params }: { params: { slug: strin
             <div className="flex items-start gap-3">
               <Clock size={20} className="text-neutral-secondary mt-0.5 shrink-0" />
               <div className="space-y-1">
-                {hours.map((h) => (
-                  <div key={h.id} className="flex gap-4">
+                {restaurant.hours.map((h, i) => (
+                  <div key={i} className="flex gap-4">
                     <span className="text-neutral-secondary w-24">{h.days}</span>
                     <span className={h.hours === 'Closed' ? 'text-error' : ''}>{h.hours}</span>
                   </div>
@@ -144,11 +125,11 @@ export default async function RestaurantPage({ params }: { params: { slug: strin
           </div>
 
           {/* Menu */}
-          {Array.isArray(restaurant.menu) && restaurant.menu.length > 0 && (
+          {restaurant.menu.length > 0 && (
             <div className="p-6 border-t border-neutral-border">
               <h2 className="font-semibold text-lg mb-4">Menu Highlights</h2>
               <div className="space-y-2">
-                {(restaurant.menu as { item: string; price: number }[]).map((m, i) => (
+                {restaurant.menu.map((m, i) => (
                   <div key={i} className="flex justify-between items-center py-2 border-b border-neutral-border last:border-0">
                     <span>{m.item}</span>
                     <span className="font-medium text-primary">${m.price.toFixed(2)}</span>
@@ -161,34 +142,28 @@ export default async function RestaurantPage({ params }: { params: { slug: strin
           {/* Map */}
           <div className="h-48 bg-neutral-border">
             <iframe
-              src={`https://www.google.com/maps/embed/v1/place?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY || 'YOUR_KEY'}&q=${encodeURIComponent(restaurant.name + ' ' + restaurant.address + ' Ottawa')}`}
+              src={`https://www.openstreetmap.org/export/embed.html?bbox=${restaurant.lng-0.01},${restaurant.lat-0.01},${restaurant.lng+0.01},${restaurant.lat+0.01}&layer=mapnik&marker=${restaurant.lat},${restaurant.lng}`}
               className="w-full h-full border-0"
-              allowFullScreen
               loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
             />
           </div>
 
           {/* CTAs */}
           <div className="p-6 flex flex-col sm:flex-row gap-3">
-            <ConversionButton
-              restaurantId={restaurant.id}
-              restaurantName={restaurant.name}
-              action="directions_click"
+            <a
               href={`https://www.google.com/maps/dir/?api=1&destination=${restaurant.lat},${restaurant.lng}`}
+              target="_blank"
+              rel="noopener"
               className="flex-1 flex items-center justify-center gap-2 py-3 bg-primary text-white rounded-lg font-medium hover:bg-primary-dark transition"
             >
               <Navigation size={18} /> Get Directions
-            </ConversionButton>
-            <ConversionButton
-              restaurantId={restaurant.id}
-              restaurantName={restaurant.name}
-              action="call_click"
+            </a>
+            <a
               href={`tel:${restaurant.phone}`}
               className="flex-1 flex items-center justify-center gap-2 py-3 border-2 border-primary text-primary rounded-lg font-medium hover:bg-primary hover:text-white transition"
             >
               <Phone size={18} /> Call Restaurant
-            </ConversionButton>
+            </a>
           </div>
         </div>
       </main>
